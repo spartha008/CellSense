@@ -107,15 +107,32 @@ table.t tr:last-child td { border-bottom: none; }
 /* Wide tables scroll inside their card instead of spilling past it */
 .card:has(table.t) { overflow-x: auto; }
 
-/* ---- Small laptops and tablets in landscape: slimmer sidebar and side columns (.aside, 440-560 px on desktop) ---- */
-@media (min-width: 901px) and (max-width: 1180px) {
+/* Several column widths are set inline in app.py (the .aside side columns are 440-560 px), so the overrides below
+   use !important. */
+
+/* ---- Narrow desktop windows and tablets (641-1180 px): the desktop layout with a slimmer sidebar and side columns ---- */
+@media (min-width: 641px) and (max-width: 1180px) {
   .side { width: 184px; }
   .aside { width: 340px !important; }
+  .top { height: auto; min-height: 66px; flex-wrap: wrap; gap: 6px 14px; padding: 10px 20px; }
+  .t-right { flex-wrap: wrap; }
 }
 
-/* ---- Phones and narrow tablets: navigation on top, one column of cards ----
-   Several column widths are set inline in app.py (440-560 px side columns), so the overrides here use !important. */
-@media (max-width: 900px) {
+/* ---- 641-1000 px: no room for two columns beside the sidebar, so the cards stack in one column ---- */
+@media (min-width: 641px) and (max-width: 1000px) {
+  .row { flex-direction: column; }
+  .row > * { width: auto !important; min-width: 0 !important; flex: 1 1 auto !important; }
+  .kpis { flex-wrap: wrap; }
+  .kpi { flex: 1 1 calc(33.3% - 10px); min-width: 0; }
+  .hd { flex-wrap: wrap; }
+  .tile .val { font-size: 13px; }
+  .strip { flex-wrap: wrap; gap: 10px 22px; }
+  .ms { margin-left: 0 !important; }
+  table.t:has(th:nth-child(5)) { min-width: 600px; }
+}
+
+/* ---- Phones (640 px and below): navigation on top, one column of cards ---- */
+@media (max-width: 640px) {
   .app { flex-direction: column; }
   .side { width: 100%; height: auto; position: static; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 12px; }
   .logo { margin: 0 4px 0 2px; font-size: 18px; }

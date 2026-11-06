@@ -16,7 +16,9 @@ PAGES = [("/", "Pack overview"), ("/cells", "Cell diagnostics"), ("/forecast", "
 CHIP_TEXT = {"replace": "Critical · Replace", "inspect": "Inspect", "balance": "Balance", "monitor": "Monitor", "ok": "Healthy"}
 SEV_CLASS = {"replace": "critical", "inspect": "warning", "balance": "warning", "monitor": "monitor", "ok": "ok"}
 STATUS_MARK = {"replace": "#d03b3b", "inspect": "#fab219", "balance": "#fab219", "monitor": "#52514e"}
-GRAPH_CFG = {"displayModeBar": False, "responsive": True}  # charts follow their card when a phone rotates
+# No "responsive": True here: with it, dcc.Graph drops each figure's fixed height and takes the card's height instead,
+# which collapses the chart (the cards have no fixed height). Charts still size to their card's width when drawn.
+GRAPH_CFG = {"displayModeBar": False}
 
 
 def sgn(v: float, d: int = 0) -> str:
