@@ -1,4 +1,4 @@
-"""Ready-made packs: the demo pack from the pitch deck, and clean healthy packs."""
+"""Ready-made packs: the demo pack (three problem cells) and clean healthy packs."""
 from __future__ import annotations
 
 from ..config import PACK
@@ -6,7 +6,7 @@ from .ageing import capacity_history
 from .ecm import CellParams, PackSimulator
 from .faults import Fault
 
-# The pack shown in the deck: Cell 47 degrading, Cell 12 low on charge, Cell 83 drifting early.
+# Demo pack: Cell 47 degrading, Cell 12 low on charge, Cell 83 drifting early.
 DEMO_CONDITIONS = (
     Fault("capacity_fade", 47, 0.0355),
     Fault("resistance_growth", 47, 0.38),

@@ -30,7 +30,7 @@ Open http://127.0.0.1:8050. The first start trains the anomaly model (about a mi
 
 `app.py` at the repo root is the WSGI entrypoint: it builds the dashboard and exposes the Flask server as `app`,
 which Vercel's Python runtime serves. Vercel installs only `requirements.txt` (about 340 MB, inside the 500 MB
-Python function limit) and `.vercelignore` keeps decks, reports and tests out of the bundle.
+Python function limit) and `.vercelignore` keeps reports, tests and data out of the bundle.
 
 Serverless functions are frozen between requests, so on Vercel the simulation advances on each request (by the
 time elapsed since the last one, at most 2 simulated minutes per request) instead of in a background thread.
@@ -40,7 +40,7 @@ runs a long-lived process (e.g. `python -m cellsense dashboard --host 0.0.0.0`) 
 
 ## What is in the box
 
-| Deck claim | Where it lives |
+| Feature | Where it lives |
 |---|---|
 | **Detect**: rolling z-scores vs the pack median + Isolation Forest | `cellsense/analytics/engine.py` (robust median/MAD z, 30 s window, 10 s persistence), `analytics/anomaly.py` |
 | **Diagnose**: ΔV/ΔI internal resistance → balance vs replace | `engine.py` (resistance from current steps), `analytics/diagnosis.py` (rules) |
@@ -142,7 +142,7 @@ settled data, CellSense reports "losing charge faster than the pack (fade or lea
   `validate` checks that shape and the forecaster against the NASA and Oxford datasets.
 * **Datasets are not included** (licensing and size); see "Validation on real ageing data" for the download links.
 * **The 150 Ah cell** is Chen2020 (LG M50, NMC811/graphite-SiOx) with its electrodes widened 30× to match the
-  deck's 96s1p, 52 kWh pack.
+  96s1p, 52 kWh pack.
 
 ## Project layout
 
@@ -150,12 +150,13 @@ settled data, CellSense reports "losing charge faster than the pack (fade or lea
 cellsense/
   config.py            pack definition and every threshold
   sim/                 ecm.py (real-time), physics.py (PyBaMM+liionpack), calibrate.py, faults.py,
-                       drive_cycles.py, ageing.py, scenarios.py (the deck's demo pack)
+                       drive_cycles.py, ageing.py, scenarios.py (demo pack: Cells 47, 12, 83)
   analytics/           engine.py, drift.py, anomaly.py, diagnosis.py, forecast.py, range_impact.py, training.py
   dashboard/           app.py, session.py, figures.py, assets/
   validation/          benchmark.py, datasets.py
   data/                ecm_params.json (PyBaMM fit), iforest.joblib (trained model)
+app.py                 web entrypoint (Vercel / any WSGI host)
+data/runs/             demo PyBaMM + liionpack run for `dashboard --replay`
 tests/                 pytest suite
 reports/               benchmark and validation results
-mockups/               pitch-deck screenshots
 ```
