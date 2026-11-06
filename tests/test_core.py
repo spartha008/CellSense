@@ -90,3 +90,48 @@ def test_fast_anomaly_score_matches_sklearn():
         pytest.skip("anomaly model not trained (python -m cellsense train)")
     X = np.random.default_rng(4).standard_normal((96, 5))
     assert np.allclose(m.score(X), -m.model.score_samples(pack_scale(X).astype(np.float32)))
+
+
+def _demo_forecasts():
+    cap = np.full(PACK.n_series, 150.0)
+    cap[46] *= 0.965
+    hist = capacity_history(cap, now_cycle=320, seed=3)
+    return forecast(hist)
+
+
+def test_injected_capacity_fade_shifts_the_trend_up_from_today():
+    from cellsense.analytics.forecast import apply_effects, fault_effect
+
+    fcs = _demo_forecasts()
+    e = fault_effect(Fault("capacity_fade", 29, 0.04), 0.0, CellParams.load(), 1.3e-3)
+    assert e.permanent_km == pytest.approx(0.04 * PACK.rated_range_km) and e.recoverable_km == 0
+    out = apply_effects(fcs, [e])
+    before, after = fcs[28], out[28]
+    assert np.allclose(after.fy - before.fy, e.permanent_km)
+    assert after.km_6mo == pytest.approx(before.km_6mo + e.permanent_km)
+    assert after.fault_label == "-4.0% capacity"
+    assert all(a is b for k, (a, b) in enumerate(zip(fcs, out)) if k != 28)  # every other cell untouched
+
+
+def test_recoverable_faults_cost_range_today_but_leave_the_trend():
+    from cellsense.analytics.forecast import apply_effects, fault_effect
+
+    fcs = _demo_forecasts()
+    p = CellParams.load()
+    imb = fault_effect(Fault("charge_imbalance", 29, 0.02), 0.0, p, 1.3e-3)
+    leak_1h = fault_effect(Fault("self_discharge", 29, 0.06), 3600.0, p, 1.3e-3)
+    assert imb.permanent_km == 0 and imb.recoverable_km == pytest.approx(0.02 * PACK.rated_range_km)
+    assert fault_effect(Fault("self_discharge", 29, 0.06), 0.0, p, 1.3e-3).recoverable_km == 0
+    assert leak_1h.recoverable_km == pytest.approx(0.06 * PACK.rated_range_km)
+    after = apply_effects(fcs, [imb])[28]
+    assert np.array_equal(after.fy, fcs[28].fy) and after.km_6mo == fcs[28].km_6mo
+    assert after.now_km == pytest.approx(fcs[28].now_km + imb.recoverable_km)
+
+
+def test_resistance_growth_costs_range_under_load_and_grows_with_severity():
+    from cellsense.analytics.forecast import fault_effect
+
+    p = CellParams.load()
+    r = p.r0 + p.r1
+    km = [fault_effect(Fault("resistance_growth", 29, s), 0.0, p, r).permanent_km for s in (0.2, 0.4, 0.6)]
+    assert 0 < km[0] < km[1] < km[2] < 10  # a few km: the cell reaches cut-off a little earlier under load

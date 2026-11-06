@@ -82,17 +82,26 @@ def resistance_dots(s: Snapshot, highlight: list[int]) -> go.Figure:
     return fig
 
 
-def forecast_chart(fcs: list[CellForecast], now_cycle: int, replace_km: float) -> go.Figure:
+def forecast_chart(fcs: list[CellForecast], now_cycle: int, replace_km: float, colors: list[str] | None = None) -> go.Figure:
     fig = go.Figure()
     end = max(f.fx[-1] for f in fcs) if fcs else now_cycle
     fig.add_vrect(x0=now_cycle, x1=end, fillcolor="#f7f7f4", line_width=0, layer="below")
     for k, f in enumerate(fcs):
-        col = SERIES[[0, 2, 1, 3][k % 4]]
+        col = colors[k] if colors else SERIES[[0, 2, 1, 3][k % 4]]
         rgb = tuple(int(col[i:i + 2], 16) for i in (1, 3, 5))
         fig.add_trace(go.Scatter(x=np.r_[f.fx, f.fx[::-1]], y=np.r_[f.hi, np.clip(f.lo, 0, None)[::-1]], fill="toself",
                                  fillcolor=f"rgba({rgb[0]},{rgb[1]},{rgb[2]},0.16)", line=dict(width=0), hoverinfo="skip", showlegend=False))
         fig.add_trace(go.Scatter(x=f.cycles, y=f.km, line=dict(color=col, width=2.2), name=f"Cell {f.cell}", hovertemplate="cycle %{x}: %{y:.1f} km"))
         fig.add_trace(go.Scatter(x=f.fx, y=f.fy, line=dict(color=col, width=2.2, dash="dash"), showlegend=False, hovertemplate="forecast %{y:.1f} km"))
+        added = f.step_km + f.recoverable_km
+        if added > 0:  # an injected fault: jump from the cell's trend to what it costs today
+            base = float(f.fy[0]) - f.step_km
+            kind = "recovered by balancing or charging" if f.step_km == 0 else ("part recoverable" if f.recoverable_km else "permanent")
+            fig.add_trace(go.Scatter(x=[now_cycle, now_cycle], y=[base, base + added], mode="lines+markers", line=dict(color=col, width=2.6),
+                                     marker=dict(color=col, size=[0, 11], symbol="diamond", line=dict(color="white", width=1.5)), showlegend=False,
+                                     hovertemplate=f"Cell {f.cell} · injected {f.fault_label}: +{added:.1f} km today ({kind})<extra></extra>"))
+            fig.add_annotation(x=now_cycle, y=base + added, text=f"Cell {f.cell} · injected fault: +{added:.1f} km",
+                               showarrow=False, xanchor="right", xshift=-8, bgcolor="rgba(255,255,255,0.9)", font=dict(size=12, color=col))
         if f.cross_cycle is not None:
             fig.add_trace(go.Scatter(x=[f.cross_cycle], y=[replace_km], mode="markers", marker=dict(color=col, size=11, line=dict(color="white", width=2)),
                                      showlegend=False, hovertemplate=f"Cell {f.cell} reaches {replace_km:.0f} km at cycle %{{x:.0f}}<extra></extra>"))
@@ -104,6 +113,7 @@ def forecast_chart(fcs: list[CellForecast], now_cycle: int, replace_km: float) -
                   annotation_position="top right", annotation_font=dict(size=12, color=INK2))
     fig = _base(fig, 430, "Range lost if this cell limits the pack (km)", "Equivalent full cycles (≈ 25 per month)", legend=True)
     fig.update_yaxes(rangemode="tozero")
+    fig.update_layout(uirevision="forecast")  # live redraws keep the viewer's zoom
     return fig
 
 

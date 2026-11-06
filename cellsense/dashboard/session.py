@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..analytics import CellSenseEngine, Snapshot, forecast
+from ..analytics import CellForecast, CellSenseEngine, Snapshot, apply_effects, fault_effect, forecast
 from ..analytics.anomaly import AnomalyModel
 from ..analytics.training import train_anomaly_model
 from ..config import PACK
@@ -19,6 +19,7 @@ from ..sim.ecm import CellParams
 class Injection:
     fault: Fault
     t_inj: float
+    r_before: float = float("nan")  # the cell's R0 + R1 just before the fault (for the forecast's load-loss estimate)
 
 
 class LiveSession:
@@ -54,6 +55,7 @@ class LiveSession:
     # ------------------------------------------------------------------ control
     def reset(self, mode: str = "demo", seed: int | None = None):
         with self.lock:
+            self.generation = getattr(self, "generation", 0) + 1  # lets the dashboard tell a new pack from the old one
             self.mode = "replay" if self.replay is not None else mode
             self.seed = int(seed if seed is not None else np.random.default_rng().integers(1, 10_000))
             self.paused = False
@@ -75,9 +77,11 @@ class LiveSession:
         if self.replay is not None:
             return None
         with self.lock:
+            i = int(cell) - 1
+            r_before = float(self.sim.r0[i] + self.sim.r1[i])  # the fault is only applied on the next step
             f = self.sim.inject_now(kind, int(cell), float(severity))
             self.engine.mark_injection(int(cell))
-            self.injections.append(Injection(f, self.sim.t))
+            self.injections.append(Injection(f, self.sim.t, r_before))
             return f
 
     def park(self, seconds: int = 240):
@@ -143,6 +147,16 @@ class LiveSession:
             self._advance()
         with self.lock:
             return self.snap, list(self.injections)
+
+    def forecast_view(self) -> list[CellForecast]:
+        """The forecasts with every fault injected in this session folded in (unchanged when there are none)."""
+        s, injs = self.state()
+        if not injs:
+            return self.forecasts
+        cap = self.hist.capacity[-1]
+        med = float(np.median(cap))
+        effects = [fault_effect(j.fault, s.t - j.t_inj, self.params, j.r_before, float(cap[j.fault.cell - 1]) / med) for j in injs]
+        return apply_effects(self.forecasts, effects)
 
     def detection(self, inj: Injection) -> dict:
         """How CellSense and a threshold-only BMS reacted to an injected fault."""

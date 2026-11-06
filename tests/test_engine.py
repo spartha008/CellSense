@@ -54,3 +54,30 @@ def test_injected_fault_is_caught_quickly_and_bms_stays_silent(kind, sev, expect
     assert s.first_flag_t[28] - f.t_start < 120
     assert s.finding(29).status == expect
     assert np.isnan(s.bms_first_t[28])
+
+
+@pytest.mark.parametrize("label,v29,current,expect", [
+    ("60 mV low at rest", 3.640, 0.5, True),
+    ("40 mV low at rest, under the 50 mV limit", 3.660, 0.5, False),
+    ("60 mV low while driving: the rest rule only applies at rest", 3.640, 100.0, False),
+    ("below the 2.8 V floor", 2.750, 100.0, True),
+    ("above the 4.2 V ceiling", 4.250, -50.0, True),
+])
+def test_threshold_bms_alarm_rule(label, v29, current, expect):
+    eng = CellSenseEngine()
+    rng = np.random.default_rng(0)
+    for t in range(1, 31):
+        v = 3.70 + 0.001 * rng.standard_normal(96)
+        v[28] = v29
+        eng.update(float(t), current, v)
+    assert np.isfinite(eng.bms_first_t[28]) == expect, label
+    assert np.isnan(np.delete(eng.bms_first_t, 28)).all()
+
+
+def test_threshold_bms_alarms_on_a_gross_imbalance_long_after_cellsense():
+    """Keeps the 'BMS stays silent' tests honest: the baseline does fire once a fault is big enough."""
+    sim, hist = healthy_pack(21)
+    f = Fault("charge_imbalance", 29, 0.08, 300)
+    s = _run(sim, hist, "city", 31, f)
+    assert np.isfinite(s.bms_first_t[28]) and np.isfinite(s.first_flag_t[28])
+    assert s.first_flag_t[28] < s.bms_first_t[28]

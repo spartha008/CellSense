@@ -33,11 +33,14 @@ def test_every_dashboard_page_builds():
         A.forecast_page(sess)
         A.lab_static(sess)
         A.lab_dynamic(sess)
+        A.forecast_lab_page(sess)
         sess.inject("resistance_growth", 29, 0.35)
         for _ in range(60):
             sess._tick()
         sess.snap = sess.engine.snapshot()
         A.lab_dynamic(sess)
+        A.lab_dynamic(sess, compact=True)
+        A.forecast_lab_page(sess)
     finally:
         sess.stop()
 
@@ -60,3 +63,16 @@ def test_extract_nasa_handles_nested_zips_and_ignores_unsafe_names(tmp_path):
     assert sorted(p.name for p in out.iterdir()) == ["B0005.mat", "evil.mat"]
     assert (out / "B0005.mat").read_bytes() == b"mat-bytes"
     assert not (tmp_path / "evil.mat").exists()  # flattened into out/, never written outside it
+
+
+def test_lab_buttons_only_write_inside_their_own_page():
+    """Dash fires a callback when its inputs appear on screen if any of its outputs was already there, which
+    would inject a fault every time the Forecast or Fault lab page opened."""
+    from cellsense.dashboard import app as A
+    from cellsense.dashboard.session import LiveSession
+
+    sess = LiveSession(mode="demo", speed=1, warmup_s=60)
+    sess.stop()
+    keys = [k for k, v in A.create_app(sess).callback_map.items() if any(i["id"] == "btn-inject" for i in v["inputs"])]
+    assert len(keys) == 1
+    assert [o.split("@")[0] for o in keys[0].strip(".").split("...")] == ["lab-status.children"]  # the key lists the outputs

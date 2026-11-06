@@ -213,35 +213,75 @@ def cells_dynamic(sess: LiveSession, cell: int):
     return [strip, html.Div(className="row", children=[left, right])]
 
 
+def forecast_view(sess: LiveSession):
+    """Cells ranked by forecast (injected lab faults folded in), the cells to draw with their colours, and a key
+    that changes only when the drawn picture does."""
+    order = ranking(sess.forecast_view(), top=PACK.n_series)
+    _, injs = sess.state()
+    hot = injs[-1].fault.cell if injs else None  # the cell the lab touched last
+    chart, colors = order[:2], [F.SERIES[0], F.SERIES[2]]
+    if hot is not None and hot not in [f.cell for f in chart]:
+        chart, colors = chart + [next(f for f in order if f.cell == hot)], colors + [F.SERIES[3]]
+    key = [sess.generation] + [[f.cell, round(f.step_km, 1), round(f.recoverable_km, 1)] for f in chart]  # a reset is a new pack
+    return order, hot, chart, colors, key
+
+
+def forecast_figure(sess: LiveSession, view=None):
+    _, _, chart, colors, _ = view or forecast_view(sess)
+    return F.forecast_chart(chart, sess.hist.now_cycle, THRESHOLDS.replace_km, colors)
+
+
+def ranking_card(sess: LiveSession, view=None):
+    order, hot, _, _, _ = view or forecast_view(sess)
+    s, injs = sess.state()
+    shown = list(enumerate(order[:3]))
+    if hot is not None and hot not in [fc.cell for _, fc in shown]:
+        shown.append(next((k, fc) for k, fc in enumerate(order) if fc.cell == hot))
+    rows = []
+    for k, fc in shown:
+        f = s.finding(fc.cell)
+        added = fc.step_km + fc.recoverable_km
+        m = fc.months_to_threshold
+        when = ("now" if m < 0.5 else f"cycle {fc.cross_cycle:.0f} (~{m:.0f} mo)") if fc.cross_cycle is not None else "not within 10 months"
+        colour = F.SERIES[3] if fc.cell == hot and k >= 2 else F.SERIES[[0, 2, 1][k]] if k < 3 else F.SERIES[3]
+        cause = (f"{f.headline}: {f.detail}" if f else f"Injected {fc.fault_label}; CellSense still watching" if fc.fault_label
+                 else "Capacity trending below the pack")
+        rows.append(html.Tr([html.Td(str(k + 1), className="muted"), html.Td(html.Span([html.I(style={"background": colour}), f"Cell {fc.cell}"], className="sw")),
+                             html.Td([f"{fc.now_km:.1f} km", html.Div(f"+{added:.1f} km injected", className="sub")] if added > 0 else f"{fc.now_km:.1f} km"),
+                             html.Td(f"~{fc.km_6mo:.0f} km"), html.Td(when), html.Td(cause, className="sub"),
+                             html.Td(chip(f.status if f else "monitor", f.action if f else "Monitor"))]))
+    out = [html.H3("Weakest-link ranking"), html.Table(className="t", children=[
+        html.Tr([html.Th("#"), html.Th("Cell"), html.Th("Range cost now"), html.Th("In 6 months"), html.Th(f"Hits {THRESHOLDS.replace_km:.0f} km"), html.Th("Root cause"), html.Th("Action")]), *rows])]
+    if injs:
+        out.append(html.Div([html.B("How an injected fault moves the forecast. "),
+                             "Capacity fade and resistance growth shift the cell's trend up from today (resistance as the charge lost when the cell reaches "
+                             f"{PACK.v_min:.1f} V under a {THRESHOLDS.load_current_a:.0f} A load before the rest of the pack does). Charge imbalance and "
+                             "self-discharge cost range today, but balancing or charging gives it back, so the trend stays where it was."],
+                            className="note", style={"marginTop": "8px"}))
+    return out
+
+
 def forecast_page(sess: LiveSession):
-    s, _ = sess.state()
-    top = ranking(sess.forecasts, top=3)
+    view = forecast_view(sess)
     chart = html.Div(className="card", children=[
         html.Div(className="hd", children=[html.Div([html.H3("Which cell will limit the pack, and when?"),
                                                       html.Div("Range lost if this cell limits the pack · history (solid), quadratic trend forecast with 95% band (dashed)", className="sub")])]),
-        dcc.Graph(figure=F.forecast_chart(top[:2], sess.hist.now_cycle, THRESHOLDS.replace_km), config=GRAPH_CFG)])
-    rows = []
-    for k, fc in enumerate(top):
-        f = s.finding(fc.cell)
-        when = f"cycle {fc.cross_cycle:.0f} (~{fc.months_to_threshold:.0f} mo)" if fc.cross_cycle else "not within 10 months"
-        rows.append(html.Tr([html.Td(str(k + 1), className="muted"), html.Td(html.Span([html.I(style={"background": F.SERIES[[0, 2, 1][k]]}), f"Cell {fc.cell}"], className="sw")),
-                             html.Td(f"{fc.now_km:.1f} km"), html.Td(f"~{fc.km_6mo:.0f} km"), html.Td(when),
-                             html.Td(f"{f.headline}: {f.detail}" if f else "Capacity trending below the pack", className="sub"),
-                             html.Td(chip(f.status if f else "monitor", f.action if f else "Monitor"))]))
-    table = html.Div(className="card", children=[html.H3("Weakest-link ranking"), html.Table(className="t", children=[
-        html.Tr([html.Th("#"), html.Th("Cell"), html.Th("Range cost now"), html.Th("In 6 months"), html.Th(f"Hits {THRESHOLDS.replace_km:.0f} km"), html.Th("Root cause"), html.Th("Action")]), *rows])])
+        dcc.Graph(id="fc-chart", figure=forecast_figure(sess, view), config=GRAPH_CFG), dcc.Store(id="fc-key", data=view[4])])
+    table = html.Div(id="fc-rank", className="card", children=ranking_card(sess, view))
     return [chart, table]
 
 
-def lab_static(sess: LiveSession):
+def lab_static(sess: LiveSession, compact: bool = False):
+    """Fault lab controls. ``compact`` stacks them for the narrow column beside the forecast."""
+    w = (lambda px: {"width": "100%"}) if compact else (lambda px: {"width": px})
     return html.Div(className="card", children=[
         html.H3("Fault lab"), html.Div("Inject a fault into the running pack and watch CellSense catch it, next to a threshold-only BMS.", className="sub"),
-        html.Div(className="row", style={"marginTop": "6px", "flexWrap": "wrap"}, children=[
-            html.Div(className="ctl", style={"width": "200px"}, children=[html.Div("Target cell", className="lb"),
+        html.Div(className="col" if compact else "row", style={"marginTop": "6px", "flexWrap": "wrap", "gap": "0" if compact else "14px"}, children=[
+            html.Div(className="ctl", style=w("200px"), children=[html.Div("Target cell", className="lb"),
                      dcc.Dropdown(id="lab-cell", options=[{"label": f"Cell {c} · {PACK.label(c)}", "value": c} for c in range(1, PACK.n_series + 1)], value=29, clearable=False)]),
-            html.Div(className="ctl", style={"flex": "1", "minWidth": "420px"}, children=[html.Div("Fault type", className="lb"),
+            html.Div(className="ctl", style={"width": "100%"} if compact else {"flex": "1", "minWidth": "420px"}, children=[html.Div("Fault type", className="lb"),
                      dcc.RadioItems(id="lab-kind", options=[{"label": LABELS[k], "value": k} for k in SEVERITY_RANGES], value="resistance_growth", className="seg", inline=True)]),
-            html.Div(className="ctl", style={"width": "330px"}, children=[html.Div(["Severity: ", html.Span(id="lab-sev-text", style={"color": "#0b0b0b"})], className="lb"),
+            html.Div(className="ctl", style=w("330px"), children=[html.Div(["Severity: ", html.Span(id="lab-sev-text", style={"color": "#0b0b0b"})], className="lb"),
                      dcc.Slider(id="lab-sev", min=0, max=100, step=5, value=40, marks={0: "mild", 50: "", 100: "severe"})]),
         ]),
         html.Div(className="btns", children=[
@@ -253,7 +293,8 @@ def lab_static(sess: LiveSession):
     ])
 
 
-def lab_dynamic(sess: LiveSession):
+def lab_dynamic(sess: LiveSession, compact: bool = False):
+    """Detection result for the latest injected fault; the full page also shows the injection log."""
     s, injs = sess.state()
     if not injs:
         return [html.Div(className="card", children=[html.H3("Detection result"), html.Div("No fault injected yet. Pick a cell, a fault type and a severity, then press Inject.", className="empty")])]
@@ -271,17 +312,29 @@ def lab_dynamic(sess: LiveSession):
                      html.Td((lambda r: f"{r['cellsense_s']:.0f} s" if r["cellsense_s"] is not None else "not yet")(sess.detection(j))),
                      html.Td((lambda r: f"{r['bms_s']:.0f} s" if r["bms_s"] is not None else "no alarm")(sess.detection(j))),
                      html.Td((lambda r: r["finding"].action if r["finding"] else "–")(sess.detection(j)))]) for j in reversed(injs[-6:])]
-    return [html.Div(className="row", children=[
-        html.Div(className="card", style={"flex": "1"}, children=[
+    result = html.Div(className="card", style={"flex": "1"}, children=[
             html.H3("Detection result"), html.Div(inj.fault.describe() + f", injected {d['elapsed']:.0f} s ago", className="sub"),
             html.Div(className="res", children=[html.Div([html.Div("CellSense", className="who"), html.Div(diag, className="det")]), html.Div(cs_chip, className="r")]),
             html.Div(className="res", children=[html.Div([html.Div("Threshold-only BMS", className="who"),
                      html.Div(f"Watches a {PACK.v_min:.1f}–{PACK.v_max:.1f} V window and a fixed {THRESHOLDS.bms_rest_dv * 1000:.0f} mV rest-imbalance limit.", className="det")]),
                      html.Div(bms_chip, className="r")]),
-            dcc.Graph(figure=F.lab_chart(s, inj.fault.cell, inj.t_inj, cs), config=GRAPH_CFG)]),
+            dcc.Graph(figure=F.lab_chart(s, inj.fault.cell, inj.t_inj, cs), config=GRAPH_CFG)])
+    if compact:
+        return [result]
+    return [html.Div(className="row", children=[result,
         html.Div(className="card", style={"width": "560px"}, children=[html.H3("Injection log"),
                  html.Table(className="t", children=[html.Tr([html.Th("When"), html.Th("Fault"), html.Th("CellSense"), html.Th("Threshold BMS"), html.Th("Action")]), *hist])]),
     ])]
+
+
+def forecast_lab_page(sess: LiveSession):
+    """Deck Screen 3: weakest-link forecast and ranking, with the Fault lab beside it for live injection."""
+    return html.Div(className="row", children=[
+        html.Div(className="col", style={"flex": "1"}, children=forecast_page(sess)),
+        html.Div(className="col", style={"width": "440px", "flex": "none"}, children=[
+            lab_static(sess, compact=True),
+            html.Div(id="fc-lab-dynamic", className="col", children=lab_dynamic(sess, compact=True))]),
+    ])
 
 
 # ---------------------------------------------------------------------------------------- app
@@ -303,10 +356,12 @@ def create_app(sess: LiveSession) -> Dash:
         ]),
     ])
 
+    titles = {"/forecast": "Weakest-link forecast & fault lab"}
+
     @app.callback([Output(f"nav-{k}", "className") for k in range(len(PAGES))] + [Output("t-title", "children")], Input("url", "pathname"))
     def _nav(path):
         path = path if path in dict(PAGES) else "/"
-        return [("on" if p == path else "") for p, _ in PAGES] + [dict(PAGES)[path]]
+        return [("on" if p == path else "") for p, _ in PAGES] + [titles.get(path, dict(PAGES)[path])]
 
     @app.callback(Output("page-static", "children"), Output("sel-cell", "data"), Output("page-dynamic", "children", allow_duplicate=True),
                   Input("url", "pathname"), Input("url", "search"), State("sel-cell", "data"), prevent_initial_call="initial_duplicate")
@@ -319,7 +374,7 @@ def create_app(sess: LiveSession) -> Dash:
         if path == "/fault-lab":
             return lab_static(sess), cell, []
         if path == "/forecast":
-            return html.Div(forecast_page(sess), className="col"), cell, []
+            return forecast_lab_page(sess), cell, []
         return None, cell, []
 
     @app.callback(Output("sel-cell", "data", allow_duplicate=True), Input("cell-dd", "value"), prevent_initial_call=True)
@@ -347,6 +402,16 @@ def create_app(sess: LiveSession) -> Dash:
             body = overview(sess)
         return body, sub, clock, src, src2
 
+    @app.callback(Output("fc-chart", "figure"), Output("fc-key", "data"), Output("fc-rank", "children"), Output("fc-lab-dynamic", "children"),
+                  Input("tick", "n_intervals"), State("url", "pathname"), State("fc-key", "data"))
+    def _forecast_lab(_, path, key):
+        if path != "/forecast":
+            return no_update, no_update, no_update, no_update
+        view = forecast_view(sess)
+        changed = view[4] != key  # redraw the chart only when an injected fault changed it (keeps hover steady)
+        return (forecast_figure(sess, view) if changed else no_update, view[4] if changed else no_update,
+                ranking_card(sess, view), lab_dynamic(sess, compact=True))
+
     @app.callback(Output("speed-ack", "children"), Input("speed", "value"))
     def _speed(v):
         sess.set_speed(v)
@@ -356,6 +421,9 @@ def create_app(sess: LiveSession) -> Dash:
     def _sev(kind, pct):
         return Fault(kind, 1, severity_value(kind, pct or 0)).describe().split(": ", 1)[1]
 
+    # Outputs must stay inside the page this callback's buttons live on: an output that is already on screen
+    # (such as page-static) makes Dash fire the callback whenever the page appears, which would inject a fault.
+    # After a reset, the forecast beside the lab is redrawn by _forecast_lab (its key includes the pack generation).
     @app.callback(Output("lab-status", "children"), Input("btn-inject", "n_clicks"), Input("btn-park", "n_clicks"), Input("btn-demo", "n_clicks"),
                   Input("btn-healthy", "n_clicks"), State("lab-cell", "value"), State("lab-kind", "value"), State("lab-sev", "value"), prevent_initial_call=True)
     def _lab(_a, _b, _c, _d, cell, kind, pct):
