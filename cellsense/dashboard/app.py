@@ -16,7 +16,7 @@ PAGES = [("/", "Pack overview"), ("/cells", "Cell diagnostics"), ("/forecast", "
 CHIP_TEXT = {"replace": "Critical · Replace", "inspect": "Inspect", "balance": "Balance", "monitor": "Monitor", "ok": "Healthy"}
 SEV_CLASS = {"replace": "critical", "inspect": "warning", "balance": "warning", "monitor": "monitor", "ok": "ok"}
 STATUS_MARK = {"replace": "#d03b3b", "inspect": "#fab219", "balance": "#fab219", "monitor": "#52514e"}
-GRAPH_CFG = {"displayModeBar": False}
+GRAPH_CFG = {"displayModeBar": False, "responsive": True}  # charts follow their card when a phone rotates
 
 
 def sgn(v: float, d: int = 0) -> str:
@@ -126,7 +126,7 @@ def overview(sess: LiveSession):
                                                    html.Span([html.I(style={"background": "#b8312f"}), f"Lost to Cell {lim} ({imp.lost_km:.0f} km)"])]),
         ]),
     ])
-    return [kpis, html.Div(className="row", children=[heat, html.Div(className="col", style={"width": "450px"}, children=[
+    return [kpis, html.Div(className="row", children=[heat, html.Div(className="col aside", style={"width": "450px"}, children=[
         html.Div(className="card", children=[html.Div(className="hd", style={"marginBottom": "0"}, children=[html.H3("Active alerts"), html.Span(f"{len(s.findings)} open", className="sub")]), *alerts]),
         act_card])])]
 
@@ -136,7 +136,7 @@ def cells_static(sess: LiveSession, cell: int):
     flagged = [f.cell for f in s.findings]
     opts = [{"label": f"Cell {c} · {s.status[c - 1]}", "value": c} for c in flagged] + \
            [{"label": f"Cell {c}", "value": c} for c in range(1, PACK.n_series + 1) if c not in flagged]
-    return html.Div(className="card", style={"display": "flex", "alignItems": "center", "gap": "14px", "padding": "10px 18px"}, children=[
+    return html.Div(className="card pick", style={"display": "flex", "alignItems": "center", "gap": "14px", "padding": "10px 18px"}, children=[
         html.Span("Cell", className="sub", style={"fontWeight": 600}),
         dcc.Dropdown(id="cell-dd", options=opts, value=cell, clearable=False, style={"width": "260px"}),
         html.Span("Flagged cells are listed first. Click any tile on the Pack overview to jump here.", className="sub")])
@@ -200,7 +200,7 @@ def cells_dynamic(sess: LiveSession, cell: int):
         html.Tr([html.Td("Verdict"), html.Td(chip(status, f.action if f else "Healthy"), className="num"),
                  html.Td(chip(fc.status if fc else "ok", fc.action if fc else "Healthy"), className="num")]),
     ])
-    right = html.Div(className="col", style={"width": "520px"}, children=[
+    right = html.Div(className="col aside", style={"width": "520px"}, children=[
         html.Div(className="card", children=[html.H3("Internal resistance by cell"), html.Div(f"ΔV/ΔI at current steps ≥ {THRESHOLDS.step_di_a:.0f} A, all 96 cells · dashed line = pack median", className="sub"),
                                              dcc.Graph(figure=F.resistance_dots(s, [cell, cmp]), config=GRAPH_CFG)]),
         html.Div(className="card", style={"flex": "1"}, children=[
@@ -322,7 +322,7 @@ def lab_dynamic(sess: LiveSession, compact: bool = False):
     if compact:
         return [result]
     return [html.Div(className="row", children=[result,
-        html.Div(className="card", style={"width": "560px"}, children=[html.H3("Injection log"),
+        html.Div(className="card aside", style={"width": "560px"}, children=[html.H3("Injection log"),
                  html.Table(className="t", children=[html.Tr([html.Th("When"), html.Th("Fault"), html.Th("CellSense"), html.Th("Threshold BMS"), html.Th("Action")]), *hist])]),
     ])]
 
@@ -331,7 +331,7 @@ def forecast_lab_page(sess: LiveSession):
     """Deck Screen 3: weakest-link forecast and ranking, with the Fault lab beside it for live injection."""
     return html.Div(className="row", children=[
         html.Div(className="col", style={"flex": "1"}, children=forecast_page(sess)),
-        html.Div(className="col", style={"width": "440px", "flex": "none"}, children=[
+        html.Div(className="col aside", style={"width": "440px", "flex": "none"}, children=[
             lab_static(sess, compact=True),
             html.Div(id="fc-lab-dynamic", className="col", children=lab_dynamic(sess, compact=True))]),
     ])
