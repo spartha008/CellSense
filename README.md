@@ -21,7 +21,8 @@ python -m venv .venv
 research stack: PyBaMM + liionpack (physics backend, `calibrate`, `simulate`), pandas, and pytest.
 
 Open http://127.0.0.1:8050. The first start trains the anomaly model (about a minute) if
-`cellsense/data/iforest.joblib` is missing.
+`cellsense/data/iforest.joblib` is missing. Stop the server with Ctrl+C in that terminal; if port 8050 is taken,
+add `--port 8051`.
 
 > The versions in `requirements-full.txt` are pinned on purpose. On Windows 11 with Smart App Control, newer builds of
 > pandas (3.x) and PyBaMM's solver package (pybammsolvers 0.10+) are blocked from loading.
@@ -44,14 +45,45 @@ runs a long-lived process (e.g. `python -m cellsense dashboard --host 0.0.0.0`) 
 |---|---|
 | **Detect**: rolling z-scores vs the pack median + Isolation Forest | `cellsense/analytics/engine.py` (robust median/MAD z, 30 s window, 10 s persistence), `analytics/anomaly.py` |
 | **Diagnose**: ΔV/ΔI internal resistance → balance vs replace | `engine.py` (resistance from current steps), `analytics/diagnosis.py` (rules) |
-| **Forecast**: which cell limits the pack next, and when | `analytics/forecast.py` (quadratic trend + 95% band per cell) |
+| **Forecast**: which cell limits the pack next, and when; faults injected in the lab fold in live | `analytics/forecast.py` (quadratic trend + 95% band per cell; `fault_effect` / `apply_effects` for injected faults) |
 | **Translate**: range lost in km | `analytics/range_impact.py` |
 | PyBaMM + liionpack 96-cell pack with injected faults | `sim/physics.py` (`python -m cellsense simulate`) |
 | Real-time simulator for the live demo, fitted to PyBaMM | `sim/ecm.py`, `sim/calibrate.py` (`python -m cellsense calibrate`) |
 | Faults: charge imbalance, resistance growth, capacity fade, self-discharge | `sim/faults.py` |
-| Dashboard: heatmap, alerts, diagnostics, forecast, live fault lab | `cellsense/dashboard/` (Plotly Dash) |
+| Threshold-only BMS baseline (2.8–4.2 V window, 50 mV rest-imbalance limit), shown next to CellSense | `engine.py` |
+| Dashboard: pack overview, cell diagnostics, forecast with the fault lab beside it, fault lab with injection log | `cellsense/dashboard/` (Plotly Dash), see [The dashboard](#the-dashboard) |
 | Benchmark: detection delay, precision/recall, diagnosis accuracy, forecast error | `validation/benchmark.py` → `reports/benchmark.md` |
 | Validation against NASA PCoE and Oxford ageing data | `validation/datasets.py` → `reports/validation.md` |
+
+## The dashboard
+
+| Page | What it shows |
+|---|---|
+| Pack overview | State of charge, cell spread, cells flagged, the limiting cell and the range it costs; a heatmap of every cell's deviation from the pack median (8 modules × 12 cells, click a cell for detail); recommended actions and active alerts |
+| Cell diagnostics | One cell against the pack: voltage vs the pack band over the last 10 minutes, rolling z-score, internal resistance of every cell, and the evidence behind the diagnosis (resistance, charge offset at rest and under load, Isolation Forest score) |
+| Forecast | Which cell will limit the pack and when it reaches the 20 km replace threshold, the weakest-link ranking, and the fault lab with a live detection result beside it, so a fault can be injected while watching the forecast |
+| Fault lab | The same controls with a wider detection chart, plus a log of every fault injected this session |
+
+The header switches the simulation speed (1×, 5×, 20×). In the fault lab, pick a cell, a fault type and a severity,
+then press **Inject fault now**. **Park the car for 8 min** gives self-discharge the settled, parked data it needs,
+and the two **Reset** buttons start a fresh demo or healthy pack.
+
+**Injected faults move the forecast.** Within a second of an injection the chart draws the injected cell (in purple,
+unless it is already one of the top two) with a jump at "Today" to what it costs now, and the ranking lists it with
+its rank:
+
+| Fault | Effect on the forecast | Lab range |
+|---|---|---|
+| Capacity fade | Permanent: the cell's trend moves up from today, so it reaches 20 km sooner | 2–6% → about 7–21 km |
+| Resistance growth | Permanent: the range lost because the cell reaches 2.8 V under a 120 A load before the rest of the pack (read off the cell's OCV curve) | +20–60% → about 1–4 km |
+| Charge imbalance | Costs range today; balancing gives it back, so the trend stays | 1–3% → about 3.5–10.5 km |
+| Self-discharge | Costs the charge leaked since injection; charging gives it back, then it leaks again | grows while it leaks |
+
+**The threshold-only BMS** shown next to CellSense in the detection result is a conventional baseline: it alarms when
+a cell leaves the 2.8–4.2 V window, or sits more than 50 mV from the pack median at rest (under 8 A). Every fault the
+lab can inject stays inside those limits, so "No alarm" there is the expected result, not a bug. It does fire once a
+fault is gross: in one test run an 8% charge imbalance alarmed after 140 s (CellSense: 13 s), and a 10%/h leak after
+about 28 minutes, mostly parked (CellSense: under 4 minutes).
 
 ## Commands
 
@@ -140,6 +172,9 @@ settled data, CellSense reports "losing charge faster than the pack (fade or lea
   real-time model. liionpack faults are present from the start of a run (no mid-run injection).
 * **Forecast history.** Per-cycle capacity estimates are generated with the standard √cycle + linear fade model;
   `validate` checks that shape and the forecaster against the NASA and Oxford datasets.
+* **Injected faults in the forecast.** How far a lab fault moves the forecast is computed from the severity that was
+  injected (the simulator's ground truth), not from what CellSense measures. The demo pack's pre-set cells (47, 12,
+  83) forecast from capacity only: their resistance growth is not added to their range cost.
 * **Datasets are not included** (licensing and size); see "Validation on real ageing data" for the download links.
 * **The 150 Ah cell** is Chen2020 (LG M50, NMC811/graphite-SiOx) with its electrodes widened 30× to match the
   96s1p, 52 kWh pack.
