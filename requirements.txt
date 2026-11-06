@@ -1,0 +1,15 @@
+# Pinned to versions verified on Windows 11 with Smart App Control on.
+# (pybamm 26 + pybammsolvers 0.11 and pandas 3.x ship binaries that Smart App Control blocks.)
+numpy==1.26.4
+scipy==1.17.1
+pandas==2.2.3
+scikit-learn==1.9.1
+joblib
+contourpy<1.4
+dash==4.5.0
+plotly==7.1.0
+pybamm==25.1.1
+pybammsolvers==0.8.2
+casadi==3.7.2
+liionpack==0.4.0
+pytest
