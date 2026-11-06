@@ -1,13 +1,45 @@
 # CellSense
 
-**Predictive cell imbalance detection for EV battery packs.** Team BitStorm, problem statement #5.
+**Find the weakest cell in an EV battery pack before it costs you range.** Team BitStorm, problem statement #5:
+EV battery cell imbalance detection.
 
-CellSense compares every cell of a 96-cell pack against the rest of the pack, in real time, and turns what it finds into
+[![Live demo](https://img.shields.io/badge/live%20demo-cell--sense--seven.vercel.app-0F9F6E)](https://cell-sense-seven.vercel.app)
+![Python 3.12](https://img.shields.io/badge/python-3.12-2A78D6)
+
+CellSense compares every cell of a 96-cell pack with the rest of the pack, every second, and turns what it finds into
 plain actions: which cell is weak, whether it needs **balancing** or **replacing**, when it will become the pack's
-limiting cell, and how many **km of range** it is costing the driver.
+limiting cell, and how many **km of range** it is costing the driver. It needs only the cell voltages and pack current
+that every BMS already measures.
+
+![Forecast and fault lab: Cell 29, injected with +36% internal resistance, is flagged by CellSense and called "replace" while a threshold-only BMS raises no alarm](docs/screenshots/forecast-fault-lab.png)
+
+*Forecast and fault lab. Cell 29 was injected with +36% internal resistance mid-drive: CellSense flagged it in 32 s
+and called it "replace", while the threshold-only BMS beside it raised no alarm.*
+
+## Try it in a minute
+
+1. Open the **[live demo](https://cell-sense-seven.vercel.app)**. The first load takes about 10 s while the host wakes up.
+2. **Pack overview** shows the demo pack: Cell 47 is degrading and costing about 11 km, Cell 12 is low on charge, and
+   Cell 83 is drifting early.
+3. Open **Forecast**, pick a cell, a fault type and a severity in the fault lab, and press **Inject fault now**. Watch
+   CellSense's detection result next to a threshold-only BMS, and the cell join the weakest-link ranking with the range
+   it costs.
+
+The hosted demo runs one pack per server instance, so a fault you inject may not show if a later request reaches a
+different instance. For the full experience, run it locally (see [Quick start](#quick-start-windows-python-312)).
+
+## Highlights
+
+- **96.5%** of 200 injected faults detected; a threshold-only BMS caught **1%** of the same faults.
+- Charge imbalance and resistance growth flagged in a median of about **20 s**; "replace" called a median of **95 s** of
+  driving after a resistance fault.
+- **89%** precision against the simulator's ground truth, or 0.11 false alarms per 96-cell pack.
+- Ageing model and forecast checked on **15 real cells** from NASA PCoE and Oxford; the forecast warned early for 13 of 15.
+- About **1 ms** per second of data for all 96 cells on a laptop.
 
 Everything runs in software: a physics-based pack model (PyBaMM + liionpack) generates the data, and a real-time
-cell model fitted to it drives the live dashboard and the fault lab.
+cell model fitted to it drives the live dashboard and the fault lab. All results are from simulation, except the
+ageing checks on real cells (see [Honest notes](#honest-notes)).
 
 ## Quick start (Windows, Python 3.12)
 
@@ -31,7 +63,7 @@ add `--port 8051`.
 
 `app.py` at the repo root is the WSGI entrypoint: it builds the dashboard and exposes the Flask server as `app`,
 which Vercel's Python runtime serves. Vercel installs only `requirements.txt` (about 340 MB, inside the 500 MB
-Python function limit) and `.vercelignore` keeps reports, tests and data out of the bundle.
+Python function limit) and `.vercelignore` keeps reports, tests, data and screenshots out of the bundle.
 
 Serverless functions are frozen between requests, so on Vercel the simulation advances on each request (by the
 time elapsed since the last one, at most 2 simulated minutes per request) instead of in a background thread.
@@ -63,6 +95,10 @@ runs a long-lived process (e.g. `python -m cellsense dashboard --host 0.0.0.0`) 
 | Cell diagnostics | One cell against the pack: voltage vs the pack band over the last 10 minutes, rolling z-score, internal resistance of every cell, and the evidence behind the diagnosis (resistance, charge offset at rest and under load, Isolation Forest score) |
 | Forecast | Which cell will limit the pack and when it reaches the 20 km replace threshold, the weakest-link ranking, and the fault lab with a live detection result beside it, so a fault can be injected while watching the forecast |
 | Fault lab | The same controls with a wider detection chart, plus a log of every fault injected this session |
+
+| Pack overview | Cell diagnostics |
+|---|---|
+| ![Pack overview: heatmap of all 96 cells, alerts with actions, and Cell 47 costing about 11 km of range](docs/screenshots/pack-overview.png) | ![Cell diagnostics for Cell 47: it tracks the pack at rest but sags under load, resistance +38%, verdict replace](docs/screenshots/cell-diagnostics.png) |
 
 The header switches the simulation speed (1×, 5×, 20×). In the fault lab, pick a cell, a fault type and a severity,
 then press **Inject fault now**. **Park the car for 8 min** gives self-discharge the settled, parked data it needs,
@@ -201,4 +237,5 @@ app.py                 web entrypoint (Vercel / any WSGI host)
 data/runs/             demo PyBaMM + liionpack run for `dashboard --replay`
 tests/                 pytest suite
 reports/               benchmark and validation results
+docs/screenshots/      dashboard screenshots used in this README
 ```
