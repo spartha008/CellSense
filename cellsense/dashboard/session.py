@@ -22,9 +22,16 @@ class Injection:
 
 
 class LiveSession:
+    """``background=True`` (local server): a thread advances the simulation continuously.
+    ``background=False`` (serverless hosts such as Vercel, which freeze the process between requests):
+    each read advances the simulation by the wall-clock time since the previous read, at most
+    ``max_catchup_s`` simulated seconds at a time so a request after a long idle stays fast."""
+
     def __init__(self, mode: str = "demo", profile: str = "mixed", speed: float = 5.0, seed: int = 7, warmup_s: int = 900,
-                 replay: str | None = None):
+                 replay: str | None = None, background: bool = True, max_catchup_s: float = 120.0):
         self.lock = threading.RLock()
+        self.background, self.max_catchup_s = background, float(max_catchup_s)
+        self._last_wall, self._acc = time.perf_counter(), 0.0
         self.replay_path = replay
         self.replay = None
         if replay:  # play back a physics run (PyBaMM + liionpack) instead of the real-time simulator
@@ -39,8 +46,10 @@ class LiveSession:
         self.paused = False
         self.reset(mode, seed)
         self._stop = threading.Event()
-        self.thread = threading.Thread(target=self._loop, name="cellsense-sim", daemon=True)
-        self.thread.start()
+        self.thread = None
+        if background:
+            self.thread = threading.Thread(target=self._loop, name="cellsense-sim", daemon=True)
+            self.thread.start()
 
     # ------------------------------------------------------------------ control
     def reset(self, mode: str = "demo", seed: int | None = None):
@@ -60,6 +69,7 @@ class LiveSession:
             for _ in range(self.warmup_s):  # start with some history on screen
                 self._tick()
             self.snap = self.engine.snapshot()
+            self._last_wall, self._acc = time.perf_counter(), 0.0
 
     def inject(self, kind: str, cell: int, severity: float) -> Fault | None:
         if self.replay is not None:
@@ -112,8 +122,25 @@ class LiveSession:
                     self.snap = self.engine.snapshot()
                     last_snap = now
 
+    def _advance(self):
+        """Serverless mode: catch the simulation up with the wall clock (bounded)."""
+        with self.lock:
+            now = time.perf_counter()
+            dt, self._last_wall = now - self._last_wall, now
+            if self.paused:
+                return
+            self._acc += dt * self.speed
+            steps = int(min(self._acc, self.max_catchup_s))
+            self._acc -= int(self._acc)  # drop whatever is beyond the cap: the sim just lags the clock
+            for _ in range(steps):
+                self._tick()
+            if steps:
+                self.snap = self.engine.snapshot()
+
     # ------------------------------------------------------------------ read
     def state(self) -> tuple[Snapshot, list[Injection]]:
+        if not self.background:
+            self._advance()
         with self.lock:
             return self.snap, list(self.injections)
 

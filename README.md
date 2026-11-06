@@ -13,15 +13,30 @@ cell model fitted to it drives the live dashboard and the fault lab.
 
 ```bash
 python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pip install -r requirements-full.txt
 .venv\Scripts\python -m cellsense dashboard
 ```
+
+`requirements.txt` is the slim dashboard runtime (what a web host installs). `requirements-full.txt` adds the
+research stack: PyBaMM + liionpack (physics backend, `calibrate`, `simulate`), pandas, and pytest.
 
 Open http://127.0.0.1:8050. The first start trains the anomaly model (about a minute) if
 `cellsense/data/iforest.joblib` is missing.
 
-> The versions in `requirements.txt` are pinned on purpose. On Windows 11 with Smart App Control, newer builds of
+> The versions in `requirements-full.txt` are pinned on purpose. On Windows 11 with Smart App Control, newer builds of
 > pandas (3.x) and PyBaMM's solver package (pybammsolvers 0.10+) are blocked from loading.
+
+## Deploying the dashboard (Vercel)
+
+`app.py` at the repo root is the WSGI entrypoint: it builds the dashboard and exposes the Flask server as `app`,
+which Vercel's Python runtime serves. Vercel installs only `requirements.txt` (about 340 MB, inside the 500 MB
+Python function limit) and `.vercelignore` keeps decks, reports and tests out of the bundle.
+
+Serverless functions are frozen between requests, so on Vercel the simulation advances on each request (by the
+time elapsed since the last one, at most 2 simulated minutes per request) instead of in a background thread.
+Each function instance keeps its own pack, so if Vercel runs several instances at once, viewers can see different
+packs and an injected fault only shows on the instance that received it. For a single always-on demo, a host that
+runs a long-lived process (e.g. `python -m cellsense dashboard --host 0.0.0.0`) avoids that.
 
 ## What is in the box
 

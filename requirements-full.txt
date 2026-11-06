@@ -1,0 +1,11 @@
+# Full research stack: physics simulation (PyBaMM + liionpack), calibration, dataset validation, tests.
+# Pinned to versions verified on Windows 11 with Smart App Control on
+# (pybamm 26 + pybammsolvers 0.11 and pandas 3.x ship binaries that Smart App Control blocks).
+-r requirements.txt
+pandas==2.2.3
+contourpy<1.4
+pybamm==25.1.1
+pybammsolvers==0.8.2
+casadi==3.7.2
+liionpack==0.4.0
+pytest

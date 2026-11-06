@@ -1,0 +1,10 @@
+# Only the dashboard (app.py + cellsense/, including cellsense/data/) is deployed; keep the bundle small.
+# Patterns are anchored with "/" so they match the repo root only.
+/*.pptx
+/mockups/
+/reports/
+/tests/
+/scripts/
+/data/
+/setup.cfg
+/requirements-full.txt
