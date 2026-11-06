@@ -105,13 +105,20 @@ python -m pytest
 | Fault | Detected | Median time to detect | Right action |
 |---|---|---|---|
 | Charge imbalance (1–3% SoC) | 98% | 24 s | 94% |
-| Resistance growth (+20–60%) | 100% | 21 s | 92% |
+| Resistance growth (+20–60%) | 100% | 20 s | 94% |
 | Capacity fade (2–6%) | 88% | ~10 min | 70% |
 | Self-discharge | 100% | ~4 min | 86% |
 
 A threshold-only BMS (2.8–4.2 V window, 50 mV rest-imbalance limit) caught 1% of the same faults. Precision against
 the simulator's ground truth is 89% (0.11 false alarms per 96-cell pack); the forecast predicts when a degrading
-cell crosses the 20 km threshold to within ~13 cycles. Re-run with `python -m cellsense benchmark`.
+cell crosses the 20 km threshold to within ~13 cycles. Re-run with `python -m cellsense benchmark` (add `--workers 8`
+on a machine with many cores and little free memory: by default it starts one process per core).
+
+Resistance is read from the voltage jump at current steps of 60 A or more. Normally the estimate is the median of the
+last 11 steps, which rejects noisy readings; when two steps in a row put a cell more than 10% away from its history,
+CellSense treats it as a real change and follows the new level at once. In the live fault lab, a +36% resistance fault
+injected mid-drive is called "replace" a median of 95 s of simulated driving after injection (10 runs; under 20 s at 5×
+speed). It cannot be faster than the drive allows: while cruising at a steady current there are no steps to read.
 
 ## Validation on real ageing data (see `reports/validation.md`)
 

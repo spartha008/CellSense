@@ -81,3 +81,71 @@ def test_threshold_bms_alarms_on_a_gross_imbalance_long_after_cellsense():
     s = _run(sim, hist, "city", 31, f)
     assert np.isfinite(s.bms_first_t[28]) and np.isfinite(s.first_flag_t[28])
     assert s.first_flag_t[28] < s.bms_first_t[28]
+
+
+def test_ring_forget_keeps_only_the_newest_rows_of_the_chosen_columns():
+    from cellsense.analytics.engine import _Ring
+
+    ring = _Ring(4, 2)
+    for k in range(6):
+        ring.push(np.array([k, 10 + k], dtype=float))
+    ring.forget(np.array([True, False]), keep_last=2)
+    v = ring.values()
+    assert np.isnan(v[:2, 0]).all() and list(v[2:, 0]) == [4, 5]
+    assert list(v[:, 1]) == [12, 13, 14, 15]
+
+
+def _square_wave(eng, r, levels, t, hold=3):
+    """Hold each current level for ``hold`` seconds; cell voltage = 3.7 V − I·R, no noise."""
+    for current in levels:
+        for _ in range(hold):
+            t += 1
+            eng.update(float(t), float(current), 3.7 - current * r)
+    return t
+
+
+def test_resistance_estimate_follows_a_real_change_within_two_steps():
+    eng = CellSenseEngine()
+    r = np.full(96, 0.8e-3)
+    t = _square_wave(eng, r, [0, 150] * 7, 0)  # 13 current steps: the 11-step ring is full of healthy readings
+    worse = r.copy()
+    worse[28] *= 1.4
+    _square_wave(eng, worse, [0, 150, 0], t)  # only 2 steps see the new resistance
+    ratio = eng._r_cache[28] / np.median(eng._r_cache)
+    assert ratio == pytest.approx(1.4, abs=0.02)  # a plain 11-step median would still read ~1.0 here
+
+
+def test_one_odd_step_does_not_move_the_resistance_estimate():
+    eng = CellSenseEngine()
+    r = np.full(96, 0.8e-3)
+    t = _square_wave(eng, r, [0, 150] * 7, 0)
+    for k in range(3):  # back up to 150 A; only the first sample of the step reads cell 29 high
+        t += 1
+        v = 3.7 - 150.0 * r
+        if k == 0:
+            v[28] -= 150.0 * 0.4 * r[28]
+        eng.update(float(t), 150.0, v)
+    t = _square_wave(eng, r, [0, 150, 0], t)
+    ratio = eng._r_cache[28] / np.median(eng._r_cache)
+    assert ratio == pytest.approx(1.0, abs=0.02)
+
+
+def test_fault_lab_reaches_replace_within_two_minutes_of_driving():
+    """The live demo: +36% resistance injected mid-drive is called 'replace' quickly, not after minutes of cruising."""
+    from cellsense.dashboard.session import LiveSession
+
+    sess = LiveSession(mode="demo", speed=1, warmup_s=600)
+    sess.stop()
+    for seed in (23, 71):
+        sess.reset("demo", seed=seed)
+        for _ in range(int(np.random.default_rng(seed).integers(30, 400))):
+            sess._tick()
+        sess.inject("resistance_growth", 29, 0.36)
+        called = None
+        for k in range(1, 121):
+            sess._tick()
+            f = sess.engine.snapshot().finding(29) if k % 5 == 0 else None
+            if f is not None and f.status == "replace":
+                called = k
+                break
+        assert called is not None, f"seed {seed}: no 'replace' within 120 s"

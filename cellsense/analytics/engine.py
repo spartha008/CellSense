@@ -8,6 +8,7 @@ imbalance in km.
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -45,6 +46,15 @@ class _Ring:
         if self.n < len(self.buf):
             return self.buf[: self.n]
         return np.roll(self.buf, -self.i, axis=0)
+
+    def forget(self, cols: np.ndarray, keep_last: int):
+        """Blank every row except the newest ``keep_last`` for the columns in boolean mask ``cols``."""
+        size = len(self.buf)
+        keep = {(self.i - 1 - k) % size for k in range(keep_last)}
+        rows = [r for r in range(size) if r not in keep]
+        block = self.buf[rows]
+        block[:, cols] = np.nan
+        self.buf[rows] = block
 
 
 @dataclass
@@ -92,7 +102,7 @@ class CellSenseEngine:
         self.last_z_t = np.full(n, -np.inf)
         self.first_flag_t = np.full(n, np.nan)
         self.bms_first_t = np.full(n, np.nan)
-        self._r = _Ring(11, n)  # last 11 current steps: follows a change within ~6 steps, median rejects outliers
+        self._r = _Ring(11, n)  # last 11 current steps: the median rejects outliers; a real change is followed within 2 steps
         self._r_cache = np.full(n, np.nan)
         self._v1_nom = 0.0  # polarisation voltage of a nominal cell, from the current history
         self.rest_off = np.full(n, np.nan)
@@ -142,6 +152,7 @@ class CellSenseEngine:
             dI = I - Ip
             if abs(dI) >= th.step_di_a:
                 self._r.push(-(V - Vp) / dI)
+                self._follow_resistance_change()
                 self._r_cache = np.nanmedian(self._r.values(), axis=0)
 
         # OCV offset of each cell vs the pack: undo the IR drop and the RC polarisation, both scaled by
@@ -200,6 +211,24 @@ class CellSenseEngine:
         self.samples += 1
         if t - self._last_eval >= self.eval_every_s:
             self.evaluate()
+
+    def _follow_resistance_change(self):
+        """The median of the last 11 steps rejects outliers, but after a real change (a fault) it only moves once
+        6 new steps have arrived, which can take minutes of cruising. When a cell's last few steps all sit more than
+        ``r_shift_frac`` away from its history, its resistance has changed: drop its older steps so the estimate
+        follows the new level now. A single noisy step cannot do this; it takes ``r_shift_steps`` in a row."""
+        k, frac = self.th.r_shift_steps, self.th.r_shift_frac
+        vals = self._r.values()
+        if len(vals) < k + 4:
+            return
+        with warnings.catch_warnings():  # a column already reset has no history yet: all-NaN is expected
+            warnings.simplefilter("ignore", RuntimeWarning)
+            base = np.nanmedian(vals[:-k], axis=0)
+        with np.errstate(invalid="ignore"):
+            rel = vals[-k:] / base - 1.0
+            shifted = np.all(rel > frac, axis=0) | np.all(rel < -frac, axis=0)
+        if shifted.any():
+            self._r.forget(shifted, keep_last=k)
 
     @property
     def if_threshold(self) -> float:

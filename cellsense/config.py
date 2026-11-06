@@ -44,6 +44,8 @@ class Thresholds:
     if_alert: float = 0.65
     # Diagnose: dV/dI internal resistance at current steps
     step_di_a: float = 60.0
+    r_shift_steps: int = 2  # this many consecutive steps all off a cell's history by more than ...
+    r_shift_frac: float = 0.10  # ... this fraction mean its resistance changed: follow the new level at once
     r_replace_ratio: float = 1.20
     r_monitor_ratio: float = 1.08
     # Diagnose: offsets (all relative to the pack median)
