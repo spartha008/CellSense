@@ -5,6 +5,7 @@ EV battery cell imbalance detection.
 
 [![Live demo](https://img.shields.io/badge/live%20demo-cell--sense--seven.vercel.app-0F9F6E)](https://cell-sense-seven.vercel.app)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-2A78D6)
+[![License: MIT](https://img.shields.io/badge/license-MIT-52514E)](LICENSE)
 
 CellSense compares every cell of a 96-cell pack with the rest of the pack, every second, and turns what it finds into
 plain actions: which cell is weak, whether it needs **balancing** or **replacing**, when it will become the pack's
@@ -271,3 +272,8 @@ The physics model uses [PyBaMM](https://pybamm.org) (Sulzer et al., 2021, doi:10
 [liionpack](https://github.com/pybamm-team/liionpack) (Tranter et al., 2022, doi:10.21105/joss.04051) with the
 Chen2020 parameter set (Chen et al., 2020, doi:10.1149/1945-7111/ab9050); the anomaly score uses scikit-learn's
 Isolation Forest (Liu, Ting and Zhou, 2008). CellSense was built for a hackathon and is no longer actively developed.
+
+## License
+
+The code is released under the [MIT License](LICENSE): you may use, change and share it, including commercially, as
+long as you keep the copyright notice. The NASA and Oxford datasets are not part of this repo and keep their own terms.
