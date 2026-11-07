@@ -185,6 +185,11 @@ cells; the two late ones are Oxford Cell 5 (1,189 cycles late: a trend cannot an
 and Oxford Cell 2 (160 cycles late). NASA cells from tests that ran only 28–40 cycles, changed protocol mid-run, or
 that NASA flags for unexplained low-capacity runs are listed but not used.
 
+**How old the data is.** The NASA set is old: its files show tests run in 2008–2010 (the 7 cells used here in
+2008–2009) on small 2 Ah lab cells, discharged at a constant current. The Oxford set (2017) uses 0.74 Ah pouch cells on
+a drive cycle. Neither is an EV-size cell in a pack, so these checks only test the shape of the ageing curve and the
+forecast; the imbalance detection itself is tested on the simulated 96-cell pack.
+
 To reproduce, download the data from the publishers (not redistributed here). The command below expects the NASA
 zip saved as `data/external/nasa_zip/5_Battery_Data_Set.zip` (it downloads as `5.+Battery+Data+Set.zip`) and the
 Oxford file in `data/external/oxford/`; change the paths to match yours:
