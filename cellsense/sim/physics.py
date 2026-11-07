@@ -43,7 +43,7 @@ def simulate_pack(current: np.ndarray, faults: list[Fault] | tuple = (), n_cells
 
     if any(f.kind == "self_discharge" for f in faults):
         raise ValueError("self_discharge is not modelled by SPMe; use the ECM backend for it")
-    if any(f.cell > n_cells for f in faults):
+    if any(not 1 <= f.cell <= n_cells for f in faults):
         raise ValueError("fault cell outside the simulated pack")
     rng = np.random.default_rng(seed)
     g = lambda: rng.standard_normal(n_cells)  # noqa: E731
@@ -75,7 +75,6 @@ def simulate_pack(current: np.ndarray, faults: list[Fault] | tuple = (), n_cells
     }
     pv.update({name: "[input]" for name in inputs}, check_already_exists=False)
     current = np.asarray(current, dtype=float)
-    t = np.arange(len(current), dtype=float)
     netlist = lp.setup_circuit(Np=1, Ns=n_cells, Rb=1e-6, Rc=1e-6, Ri=ecm.r0, V=float(ecm.ocv_at(soc0)), I=float(current[0]))
     # one constant-current step per second (liionpack mishandles interpolated drive-cycle steps here)
     experiment = pybamm.Experiment([pybamm.step.current(float(i), duration=1, period=1) for i in current], period="1 second")
@@ -110,9 +109,12 @@ def load(path: str | Path) -> SimResult:
 
 
 def analyse(res: SimResult, n_print: int = 6):
+    from dataclasses import replace
+
     from ..analytics import CellSenseEngine
 
-    eng = CellSenseEngine(capacity_ah=res.capacity)
+    n = res.voltage.shape[1]  # --cells can differ from the 96-cell default
+    eng = CellSenseEngine(replace(PACK, n_series=n, modules=1, cells_per_module=n), capacity_ah=res.capacity)
     for t, i, v in zip(res.t, res.current, res.voltage):
         eng.update(float(t), float(i), v)
     s = eng.snapshot()
@@ -130,7 +132,17 @@ def run_cli(a):
     faults = []
     for spec in a.fault:
         parts = spec.split(":")
-        faults.append(Fault(parts[0], int(parts[1]), float(parts[2]), float(parts[3]) if len(parts) > 3 else 0.0))
+        try:
+            if len(parts) != 3:
+                raise ValueError("expected kind:cell:severity, e.g. resistance_growth:29:0.35")
+            f = Fault(parts[0], int(parts[1]), float(parts[2]))
+            if not 1 <= f.cell <= a.cells:
+                raise ValueError(f"cell must be between 1 and {a.cells}")
+            if f.kind == "self_discharge":
+                raise ValueError("self_discharge is not modelled by SPMe; inject it in the dashboard's fault lab instead")
+        except ValueError as e:
+            raise SystemExit(f"cellsense simulate: bad --fault {spec!r}: {e}") from None
+        faults.append(f)
     cur = drive_cycle(a.profile, a.duration, a.seed)
     t0 = time.time()
     print(f"liionpack: {a.cells} SPMe cells in series, {a.duration} s {a.profile} drive, faults: {[f.describe() for f in faults] or 'none'}")

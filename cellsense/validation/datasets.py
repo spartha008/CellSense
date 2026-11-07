@@ -3,7 +3,7 @@
 Supported datasets (download them yourself; they are not redistributed here):
   * NASA PCoE Battery Data Set (Saha & Goebel, 2007): B0005.mat, B0006.mat, B0007.mat, B0018.mat ...
     from the NASA Prognostics Center of Excellence data repository.
-  * Oxford Battery Degradation Dataset 1 (Birkl, 2017): Oxford_Battery_Degradation_Dataset_1.mat
+  * Oxford Battery Degradation Dataset 1 (Howey & Birkl, 2017): Oxford_Battery_Degradation_Dataset_1.mat
     from the University of Oxford research archive.
 
 Two checks per cell:
@@ -215,7 +215,7 @@ def run_validation(nasa: str | None, oxford: str | None) -> str:
                       "history cannot anticipate a sudden late-life 'knee' (a cell whose fade abruptly accelerates); such cells are "
                       "forecast late.", "",
                       "Data: NASA PCoE Battery Data Set (B. Saha and K. Goebel, 2007, NASA Ames Prognostics Data Repository); Oxford "
-                      "Battery Degradation Dataset 1 (C. Birkl, 2017, University of Oxford, ODbL; see also C. R. Birkl, 'Diagnosis and "
+                      "Battery Degradation Dataset 1 (D. Howey and C. Birkl, 2017, University of Oxford, ODbL; see also C. R. Birkl, 'Diagnosis and "
                       "Prognosis of Degradation in Lithium-Ion Batteries', PhD thesis, University of Oxford, 2017).", "",
                       "## Not used" if left_out else "", "",
                       "Selection follows the README files shipped with each dataset: only tests with one fixed discharge protocol for the "

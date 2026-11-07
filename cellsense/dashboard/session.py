@@ -38,6 +38,9 @@ class LiveSession:
         if replay:  # play back a physics run (PyBaMM + liionpack) instead of the real-time simulator
             from ..sim.physics import load
             self.replay = load(replay)
+            if self.replay.voltage.shape[1] != PACK.n_series:
+                raise ValueError(f"{replay} has {self.replay.voltage.shape[1]} cells; the dashboard shows a {PACK.n_series}-cell pack "
+                                 f"(record it with `simulate --cells {PACK.n_series}`)")
             warmup_s = min(warmup_s, 300)
         self.params = CellParams.load()
         self.anomaly = AnomalyModel.load()
@@ -93,6 +96,8 @@ class LiveSession:
 
     def stop(self):
         self._stop.set()
+        if self.thread is not None:
+            self.thread.join()  # so the thread never touches the engine again after stop() returns
 
     # ------------------------------------------------------------------ loop
     def _tick(self):
@@ -111,8 +116,7 @@ class LiveSession:
 
     def _loop(self):
         last, acc, last_snap = time.perf_counter(), 0.0, 0.0
-        while not self._stop.is_set():
-            time.sleep(0.1)
+        while not self._stop.wait(0.1):  # returns at once when stop() is called
             now = time.perf_counter()
             dt, last = now - last, now
             if self.paused:

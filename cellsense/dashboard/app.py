@@ -7,6 +7,7 @@ import numpy as np
 from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
 
 from ..analytics import ranking
+from ..analytics.diagnosis import SEVERITY
 from ..config import PACK, THRESHOLDS
 from ..sim.faults import LABELS, SEVERITY_RANGES, Fault
 from . import figures as F
@@ -14,7 +15,6 @@ from .session import LiveSession
 
 PAGES = [("/", "Pack overview"), ("/cells", "Cell diagnostics"), ("/forecast", "Forecast"), ("/fault-lab", "Fault lab")]
 CHIP_TEXT = {"replace": "Critical · Replace", "inspect": "Inspect", "balance": "Balance", "monitor": "Monitor", "ok": "Healthy"}
-SEV_CLASS = {"replace": "critical", "inspect": "warning", "balance": "warning", "monitor": "monitor", "ok": "ok"}
 STATUS_MARK = {"replace": "#d03b3b", "inspect": "#fab219", "balance": "#fab219", "monitor": "#52514e"}
 # No "responsive": True here: with it, dcc.Graph drops each figure's fixed height and takes the card's height instead,
 # which collapses the chart (the cards have no fixed height). Charts still size to their card's width when drawn.
@@ -29,7 +29,7 @@ def sgn(v: float, d: int = 0) -> str:
 
 
 def chip(status: str, text: str | None = None):
-    return html.Span([html.I(className="dot"), text or CHIP_TEXT[status]], className=f"chip {SEV_CLASS.get(status, 'ok')}")
+    return html.Span([html.I(className="dot"), text or CHIP_TEXT[status]], className=f"chip {SEVERITY.get(status, 'ok')}")
 
 
 def _mix(a: str, b: str, t: float) -> str:
@@ -162,7 +162,7 @@ def cells_dynamic(sess: LiveSession, cell: int):
     cmp = _compare_cell(s, cell)
     r_ratio = ft["r_ratio"]
     strip = html.Div(className="card strip", children=[
-        html.Div([html.Div(f"Cell {cell}", className="big"), html.Div(f"Module {PACK.module_of(cell)} · position {PACK.position_of(cell)} · NMC {PACK.capacity_ah:.0f} Ah", className="sub")]),
+        html.Div([html.Div(f"Cell {cell}", className="big"), html.Div(f"Module {PACK.module_of(cell)} · position {PACK.position_of(cell)} · {PACK.chemistry} {PACK.capacity_ah:.0f} Ah", className="sub")]),
         chip(status, f"{f.headline} · {f.action}" if f else "Healthy"),
         html.Div(className="ms", style={"marginLeft": "auto"}, children=[html.Div("Internal resistance (ΔV/ΔI)", className="k"),
                  html.Div([f"{ft['r_ohm'][i] * 1000:.2f}" if np.isfinite(ft['r_ohm'][i]) else "n/a", html.Small(f"mΩ · {sgn((r_ratio[i] - 1) * 100)}% vs pack")], className="v")]),
@@ -304,9 +304,10 @@ def lab_dynamic(sess: LiveSession, compact: bool = False):
     d = sess.detection(inj)
     f = d["finding"]
     cs = d["cellsense_s"]
-    cs_chip = chip("ok", f"Detected in {cs:.0f} s") if cs is not None else chip("monitor", f"Watching… {d['elapsed']:.0f} s")
     if cs is not None:
         cs_chip = html.Span([html.I(className="dot"), f"Detected in {cs:.0f} s"], className="chip good")
+    else:
+        cs_chip = chip("monitor", f"Watching… {d['elapsed']:.0f} s")
     bms = d["bms_s"]
     bms_chip = html.Span([html.I(className="dot"), f"Alarm after {bms:.0f} s"], className="chip warning") if bms is not None else html.Span([html.I(className="dot"), "No alarm"], className="chip ok")
     diag = f"{f.headline}: {f.detail} → {f.action}" if f else "No diagnosis yet."
@@ -352,7 +353,7 @@ def create_app(sess: LiveSession) -> Dash:
             html.Header(className="top", children=[
                 html.Div([html.Div(id="t-title", className="t-title"), html.Div(id="t-sub", className="t-sub")]),
                 html.Div(className="t-right", children=[html.Span([html.I(), "Live"], className="live"), html.Span(id="clock", className="pill"),
-                                                        dcc.RadioItems(id="speed", options=[{"label": f"{x}×", "value": x} for x in (1, 5, 20)], value=int(sess.speed), className="speed", inline=True),
+                                                        dcc.RadioItems(id="speed", options=[{"label": f"{x}×", "value": x} for x in (1, 5, 20)], value=sess.speed, className="speed", inline=True),
                                                         html.Span(id="speed-ack", style={"display": "none"})])]),
             html.Section(className="content", children=[html.Div(id="page-static"), html.Div(id="page-dynamic", className="col")]),
         ]),
@@ -369,8 +370,12 @@ def create_app(sess: LiveSession) -> Dash:
                   Input("url", "pathname"), Input("url", "search"), State("sel-cell", "data"), prevent_initial_call="initial_duplicate")
     def _static(path, search, cell):
         q = parse_qs((search or "").lstrip("?"))
-        if "cell" in q:
-            cell = int(q["cell"][0])
+        try:
+            n = int(q["cell"][0]) if "cell" in q else 0
+        except ValueError:  # not a whole number, e.g. ?cell=abc
+            n = 0
+        if 1 <= n <= PACK.n_series:  # ignore cells outside the pack
+            cell = n
         if path == "/cells":
             return cells_static(sess, cell), cell, []  # [] clears the previous page at once
         if path == "/fault-lab":
@@ -388,14 +393,14 @@ def create_app(sess: LiveSession) -> Dash:
     def _dynamic(_, path, cell):
         s, _i = sess.state()
         mode = {"demo": "Demo pack (Cells 47, 12, 83 pre-set)", "healthy": "Healthy pack"}.get(sess.mode, "Recorded physics run")
-        sub = f"Pack A · 96s1p NMC · {PACK.energy_kwh:.0f} kWh · rated range {PACK.rated_range_km:.0f} km · {mode}"
+        sub = f"Pack A · {PACK.n_series}s1p {PACK.chemistry} · {PACK.energy_kwh:.0f} kWh · rated range {PACK.rated_range_km:.0f} km · {mode}"
         clock = f"Drive time {int(s.t // 60):d}:{int(s.t % 60):02d} · {s.current:.0f} A"
         if sess.replay is not None:
             src, src2 = "PyBaMM + liionpack", f"96 SPMe cells · replay of {sess.replay_path.replace(chr(92), '/').split('/')[-1]}"
         else:
             src, src2 = "Real-time ECM simulator", f"Cells fitted to {sess.params.source}"
         if path == "/cells":
-            body = cells_dynamic(sess, int(cell or 47))
+            body = cells_dynamic(sess, cell if isinstance(cell, int) and 1 <= cell <= PACK.n_series else 47)
         elif path == "/fault-lab":
             body = lab_dynamic(sess)
         elif path == "/forecast":

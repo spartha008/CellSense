@@ -1,4 +1,4 @@
-"""Pack definition and every decision threshold CellSense uses, in one place."""
+"""Pack definition and CellSense's main decision thresholds, in one place."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -40,7 +40,8 @@ class Thresholds:
     z_window_s: int = 30
     persistence_s: int = 10
     mad_floor_v: float = 0.0025  # ~ cell-voltage measurement accuracy of a production BMS
-    # Detect: Isolation Forest anomaly score (paper definition, 0..1)
+    # Detect: Isolation Forest anomaly score (paper definition, 0..1). Fallback only: the engine alerts at the
+    # threshold saved in iforest.joblib by `train` (99.5th percentile of healthy cells, currently 0.614)
     if_alert: float = 0.65
     # Diagnose: dV/dI internal resistance at current steps
     step_di_a: float = 60.0
@@ -49,10 +50,9 @@ class Thresholds:
     r_replace_ratio: float = 1.20
     r_monitor_ratio: float = 1.08
     # Diagnose: offsets (all relative to the pack median)
-    rest_current_a: float = 8.0
+    rest_current_a: float = 8.0  # 'at rest' for the threshold-BMS baseline; CellSense's charge offset updates below 40 A
     load_current_a: float = 120.0
     balance_offset_mv: float = 8.0
-    balance_max_sag_mv: float = 6.0
     # charge drift relative to the pack, in %SoC: per Ah discharged (capacity fade) and per hour (self-discharge)
     fade_slope_pct_per_ah: float = -0.010  # ~1.5% less capacity than the median cell
     self_discharge_pct_per_h: float = -3.0

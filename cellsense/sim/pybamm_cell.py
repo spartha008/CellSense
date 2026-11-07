@@ -8,7 +8,6 @@ from __future__ import annotations
 from ..config import PACK
 
 BASE_CAPACITY_AH = 5.0
-BASE_WIDTH_M = 1.58
 
 
 def scaled_parameter_values(parameter_set: str = "Chen2020", capacity_ah: float = PACK.capacity_ah):

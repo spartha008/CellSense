@@ -20,9 +20,6 @@ from ..analytics import CellSenseEngine, forecast
 from ..config import PACK, PROJECT_DIR, THRESHOLDS
 from ..sim import EXPECTED_ACTION, LABELS, PROFILES, SEVERITY_RANGES, Fault, capacity_history, drive_cycle, healthy_pack
 
-ACTION_OF = {"replace": "replace", "balance": "balance", "inspect": "inspect", "monitor": "monitor"}
-
-
 @dataclass
 class RunResult:
     seed: int
@@ -53,7 +50,9 @@ def _run(job: dict) -> dict:
     fault = None
     if kind:
         lo, hi = SEVERITY_RANGES[kind]
-        fault = Fault(kind, int(rng.integers(1, PACK.n_series + 1)), float(lo + (hi - lo) * rng.random()), float(rng.integers(300, 900)))
+        # inject 5-15 min into the drive (earlier for drives shorter than 15 min, so the fault always happens)
+        fault = Fault(kind, int(rng.integers(1, PACK.n_series + 1)), float(lo + (hi - lo) * rng.random()),
+                      float(rng.integers(min(300, duration // 3), min(900, duration))))
         sim.schedule(fault)
     trip = np.r_[drive_cycle(profile, duration, seed), 0.3 + 0.7 * rng.random(job.get("park_s", 600))]  # drive, then park
     for i in trip:
@@ -152,7 +151,7 @@ def summarise(rows: list[dict], fc: dict) -> dict:
     }
 
 
-def write_report(summary: dict, rows: list[dict], seconds: float) -> str:
+def write_report(summary: dict, rows: list[dict], seconds: float, duration: int = 1800) -> str:
     out = PROJECT_DIR / "reports"
     out.mkdir(exist_ok=True)
     (out / "benchmark.json").write_text(json.dumps({"summary": summary, "runs": rows}, indent=1, default=float))
@@ -160,7 +159,7 @@ def write_report(summary: dict, rows: list[dict], seconds: float) -> str:
     f = lambda v, d=0, u="": "–" if v is None else f"{v:.{d}f}{u}"  # noqa: E731
     lines = [
         "# CellSense benchmark", "",
-        f"{s['fault_runs']} randomised fault runs + {s['healthy_runs']} healthy packs, 96 cells each: a 30 min drive "
+        f"{s['fault_runs']} randomised fault runs + {s['healthy_runs']} healthy packs, 96 cells each: a {duration / 60:.0f} min drive "
         f"(city / highway / mixed) followed by 10 min parked, real-time ECM simulator fitted to PyBaMM. Run time {seconds:.0f} s.", "",
         "| Metric | Result |", "|---|---|",
         f"| Faults detected (any flag on the faulty cell) | {f(s['detected_any_pct'], 1, '%')} |",
@@ -192,11 +191,14 @@ def run_benchmark(runs: int = 200, healthy: int = 40, duration: int = 1800, seed
     jobs = [{"seed": seed * 100_000 + k, "kind": kinds[k % len(kinds)], "profile": PROFILES[(k // len(kinds)) % len(PROFILES)], "duration": duration} for k in range(runs)]
     jobs += [{"seed": seed * 100_000 + runs + k, "kind": None, "profile": PROFILES[k % len(PROFILES)], "duration": duration} for k in range(healthy)]
     workers = workers or max(1, (os.cpu_count() or 2) - 1)
+    for var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+        # inherited by the workers: a full BLAS thread pool per process commits ~1.6 GB on a 24-thread Windows PC
+        os.environ.setdefault(var, "1")
     t0 = time.time()
     print(f"benchmark: {len(jobs)} runs on {workers} processes ...", flush=True)
     with ProcessPoolExecutor(max_workers=workers) as ex:
         rows = list(ex.map(_run, jobs, chunksize=4))
     fc = forecast_error()
     summary = summarise(rows, fc)
-    print(write_report(summary, rows, time.time() - t0))
+    print(write_report(summary, rows, time.time() - t0, duration))
     return summary

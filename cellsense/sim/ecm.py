@@ -45,10 +45,6 @@ class CellParams:
     def soc_at(self, voltage):
         return np.interp(voltage, self.ocv, self.soc)
 
-    def slope_at(self, soc):
-        """dOCV/dSoC in volts per unit SoC."""
-        return np.interp(np.clip(soc, 0.0, 1.0), self.soc, np.gradient(self.ocv, self.soc))
-
     @classmethod
     def load(cls, path: Path | None = None) -> "CellParams":
         path = Path(path) if path else PARAMS_FILE

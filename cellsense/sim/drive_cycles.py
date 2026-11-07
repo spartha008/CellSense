@@ -33,7 +33,6 @@ class LiveDriveCycle:
         self.kind, self.rng, self.park_prob = kind, np.random.default_rng(seed), park_prob
         self.style = "city" if kind != "highway" else "highway"
         self.mode, self.level, self.left = "idle", 2.0, 0
-        self.forced: str | None = None
 
     def park(self, seconds: int = 240):
         """Force a parked period (used by the fault lab to show self-discharge)."""

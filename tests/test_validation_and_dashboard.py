@@ -76,3 +76,20 @@ def test_lab_buttons_only_write_inside_their_own_page():
     keys = [k for k, v in A.create_app(sess).callback_map.items() if any(i["id"] == "btn-inject" for i in v["inputs"])]
     assert len(keys) == 1
     assert [o.split("@")[0] for o in keys[0].strip(".").split("...")] == ["lab-status.children"]  # the key lists the outputs
+
+
+@pytest.mark.parametrize("argv", [
+    ["dashboard", "--speed", "0"],
+    ["dashboard", "--port", "99999"],
+    ["dashboard", "--replay", "no_such_run.npz"],
+    ["train", "--packs", "0"],
+    ["benchmark", "--workers", "-1"],
+    ["validate", "--oxford", "no_such_file.mat"],
+])
+def test_cli_rejects_bad_arguments_with_a_usage_error(argv, capsys):
+    from cellsense.__main__ import main
+
+    with pytest.raises(SystemExit) as e:
+        main(argv)
+    assert e.value.code == 2  # argparse usage error, not a traceback
+    assert "error: argument" in capsys.readouterr().err

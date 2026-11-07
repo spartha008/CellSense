@@ -124,7 +124,6 @@ class CellSenseEngine:
         self.t = 0.0
         self.current = 0.0
         self.v = np.full(n, np.nan)
-        self.samples = 0
         self._last_eval = -np.inf
         self._cache: tuple | None = None
 
@@ -208,7 +207,6 @@ class CellSenseEngine:
         self._hz.push(zroll)
         self._prev = (I, V)
         self.t, self.current, self.v = t, I, V
-        self.samples += 1
         if t - self._last_eval >= self.eval_every_s:
             self.evaluate()
 

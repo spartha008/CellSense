@@ -31,7 +31,7 @@ Cleaning: start-up conditioning discharges (before the cell first reaches 90% of
 
 A negative error means the forecast flagged the cell before it actually got there. A trend fitted on early history cannot anticipate a sudden late-life 'knee' (a cell whose fade abruptly accelerates); such cells are forecast late.
 
-Data: NASA PCoE Battery Data Set (B. Saha and K. Goebel, 2007, NASA Ames Prognostics Data Repository); Oxford Battery Degradation Dataset 1 (C. Birkl, 2017, University of Oxford, ODbL; see also C. R. Birkl, 'Diagnosis and Prognosis of Degradation in Lithium-Ion Batteries', PhD thesis, University of Oxford, 2017).
+Data: NASA PCoE Battery Data Set (B. Saha and K. Goebel, 2007, NASA Ames Prognostics Data Repository); Oxford Battery Degradation Dataset 1 (D. Howey and C. Birkl, 2017, University of Oxford, ODbL; see also C. R. Birkl, 'Diagnosis and Prognosis of Degradation in Lithium-Ion Batteries', PhD thesis, University of Oxford, 2017).
 
 ## Not used
 
